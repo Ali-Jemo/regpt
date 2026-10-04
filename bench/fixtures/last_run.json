@@ -1,0 +1,331 @@
+{
+ "methods:keep_all": [
+  {
+   "module": "difflib",
+   "chosen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "cost": 78,
+   "explore": 0,
+   "keep": 78,
+   "queries": 0,
+   "budget": 78,
+   "detect": 1.0,
+   "full_cost": 78,
+   "ratio": 1.0,
+   "error": null
+  },
+  {
+   "module": "textwrap",
+   "chosen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "cost": 47,
+   "explore": 0,
+   "keep": 47,
+   "queries": 0,
+   "budget": 47,
+   "detect": 1.0,
+   "full_cost": 47,
+   "ratio": 1.0,
+   "error": null
+  },
+  {
+   "module": "fractions",
+   "chosen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+   ],
+   "cost": 64,
+   "explore": 0,
+   "keep": 64,
+   "queries": 0,
+   "budget": 64,
+   "detect": 1.0,
+   "full_cost": 64,
+   "ratio": 1.0,
+   "error": null
+  },
+  {
+   "module": "shlex",
+   "chosen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "cost": 39,
+   "explore": 0,
+   "keep": 39,
+   "queries": 0,
+   "budget": 39,
+   "detect": 1.0,
+   "full_cost": 39,
+   "ratio": 1.0,
+   "error": null
+  }
+ ],
+ "methods:greedy_queried": [
+  {
+   "module": "difflib",
+   "chosen": [
+    7
+   ],
+   "cost": 69,
+   "explore": 64,
+   "keep": 5,
+   "queries": 4,
+   "budget": 78,
+   "detect": 1.0,
+   "full_cost": 78,
+   "ratio": 0.8846153846153846,
+   "error": null
+  },
+  {
+   "module": "textwrap",
+   "chosen": [
+    11
+   ],
+   "cost": 33,
+   "explore": 32,
+   "keep": 1,
+   "queries": 2,
+   "budget": 47,
+   "detect": 0.1111111111111111,
+   "full_cost": 47,
+   "ratio": 0.7021276595744681,
+   "error": null
+  },
+  {
+   "module": "fractions",
+   "chosen": [],
+   "cost": 44,
+   "explore": 44,
+   "keep": 0,
+   "queries": 2,
+   "budget": 64,
+   "detect": 0.0,
+   "full_cost": 64,
+   "ratio": 0.6875,
+   "error": null
+  },
+  {
+   "module": "shlex",
+   "chosen": [],
+   "cost": 32,
+   "explore": 32,
+   "keep": 0,
+   "queries": 2,
+   "budget": 39,
+   "detect": 0.0,
+   "full_cost": 39,
+   "ratio": 0.8205128205128205,
+   "error": null
+  }
+ ],
+ "methods:random_queried": [
+  {
+   "module": "difflib",
+   "chosen": [
+    0,
+    6,
+    7,
+    11,
+    12,
+    14,
+    15
+   ],
+   "cost": 97,
+   "explore": 64,
+   "keep": 33,
+   "queries": 4,
+   "budget": 78,
+   "detect": 1.0,
+   "full_cost": 78,
+   "ratio": 1.2435897435897436,
+   "error": null
+  },
+  {
+   "module": "textwrap",
+   "chosen": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "cost": 79,
+   "explore": 32,
+   "keep": 47,
+   "queries": 2,
+   "budget": 47,
+   "detect": 1.0,
+   "full_cost": 47,
+   "ratio": 1.6808510638297873,
+   "error": null
+  },
+  {
+   "module": "fractions",
+   "chosen": [],
+   "cost": 44,
+   "explore": 44,
+   "keep": 0,
+   "queries": 2,
+   "budget": 64,
+   "detect": 0.0,
+   "full_cost": 64,
+   "ratio": 0.6875,
+   "error": null
+  },
+  {
+   "module": "shlex",
+   "chosen": [],
+   "cost": 32,
+   "explore": 32,
+   "keep": 0,
+   "queries": 2,
+   "budget": 39,
+   "detect": 0.0,
+   "full_cost": 39,
+   "ratio": 0.8205128205128205,
+   "error": null
+  }
+ ],
+ "methods:structure": [
+  {
+   "module": "difflib",
+   "chosen": [
+    0,
+    7
+   ],
+   "cost": 73,
+   "explore": 64,
+   "keep": 9,
+   "queries": 4,
+   "budget": 78,
+   "detect": 1.0,
+   "full_cost": 78,
+   "ratio": 0.9358974358974359,
+   "error": null
+  },
+  {
+   "module": "textwrap",
+   "chosen": [
+    2,
+    11
+   ],
+   "cost": 37,
+   "explore": 32,
+   "keep": 5,
+   "queries": 2,
+   "budget": 47,
+   "detect": 0.5555555555555556,
+   "full_cost": 47,
+   "ratio": 0.7872340425531915,
+   "error": null
+  },
+  {
+   "module": "fractions",
+   "chosen": [
+    0
+   ],
+   "cost": 47,
+   "explore": 44,
+   "keep": 3,
+   "queries": 2,
+   "budget": 64,
+   "detect": 0.16666666666666666,
+   "full_cost": 64,
+   "ratio": 0.734375,
+   "error": null
+  },
+  {
+   "module": "shlex",
+   "chosen": [
+    0
+   ],
+   "cost": 34,
+   "explore": 32,
+   "keep": 2,
+   "queries": 2,
+   "budget": 39,
+   "detect": 0.5384615384615384,
+   "full_cost": 39,
+   "ratio": 0.8717948717948718,
+   "error": null
+  }
+ ]
+}
