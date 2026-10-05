@@ -109,6 +109,25 @@ def main() -> int:
         print(f"METRIC detection={mean_detect:.6f}")
         print(f"METRIC feasible_instances={len(feasible)}")
         print(f"METRIC elapsed_s={time.perf_counter() - t_start:.1f}")
+
+        # Budget sweep: the primary number is a single point in a regime, and a
+        # method that only wins at one exploration level is not a method so much
+        # as a fit to a constant. Report the neighbourhood too.
+        for frac in (0.25, 1.0, 2.0):
+            sweep = []
+            for inst in instances:
+                budget = max(inst.n_probes, int(inst.full_cost() * frac))
+                oracle = inst.oracle(budget)
+                chosen, err = _safe_call(
+                    evaluate.load_method(subject), inst, oracle
+                )
+                chosen = [int(p) for p in chosen if 0 <= int(p) < inst.n_probes]
+                det = inst.detect(chosen)
+                cost = oracle.spent + inst.set_cost(chosen)
+                ratio = cost / inst.full_cost() if inst.full_cost() else 0.0
+                sweep.append(ratio if det >= 1.0 else 1.0)
+            label = str(frac).replace(".", "p")
+            print(f"METRIC cost_ratio_at_{label}={sum(sweep)/len(sweep):.6f}")
         with open(os.path.join(BENCH, "fixtures", "last_run.json"), "w", encoding="utf-8") as fh:
             json.dump({k: v for k, v in results.items()}, fh, indent=1, default=str)
     return 0
