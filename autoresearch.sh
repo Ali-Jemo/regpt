@@ -1,22 +1,39 @@
 #!/usr/bin/env bash
 # Benchmark entrypoint.
 #
-# Phase 1: ground truth is measured by actually running every probe against
-# every mutant of four real pure-Python stdlib programs. It is cached and only
-# rebuilt when the vendored sources, the probe set, or the mutation catalogue
-# change, so a normal run costs seconds.
+# Stage 1: soundness and behaviour tests. These gate the run. A benchmark that
+#   quietly measures the wrong thing is worse than no benchmark, because the
+#   number still looks plausible, so the tests check the harness itself: that the
+#   subject method cannot read the answer, that the oracle bills every query,
+#   that the cache cannot go stale, and that every probe actually works.
 #
-# Phase 2: methods are scored on cost while detection is a hard constraint.
+# Stage 2: ground truth, measured by running every probe against every mutant of
+#   six real pure-Python stdlib programs. Cached, and rebuilt only when the
+#   vendored sources, the probe definitions, the execution oracle, or the
+#   mutation settings change.
+#
+# Stage 3: methods are scored on cost, with detection as a hard constraint.
 #
 # METRIC cost_ratio  lower is better; 1.0 == keep every probe (always safe)
 # METRIC detection   must stay 1.0 for the run to count
+#
+# Set REGPT_SKIP_TESTS=1 to skip stage 1 while iterating on the method. The
+# tests are cheap relative to a rebuild but not free, and they only need
+# re-running when the harness changes.
 
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$HERE/bench"
+TESTS="$HERE/tests"
 GT="$BENCH/fixtures/ground_truth.json"
-STAMP="$BENCH/fixtures/ground_truth.stamp"
+
+if [[ "${REGPT_SKIP_TESTS:-0}" != "1" ]]; then
+  echo "== soundness ==" >&2
+  python3 "$TESTS/test_soundness.py" >&2
+  echo "== behaviour ==" >&2
+  python3 "$TESTS/test_behaviour.py" >&2
+fi
 
 need_build=0
 if [[ ! -f "$GT" ]]; then
@@ -27,7 +44,8 @@ import ground_truth, mutate, os, probes
 print(mutate.fingerprint(
     [os.path.join(ground_truth.PROGRAMS_DIR, f"{m}.py") for m in probes.PROGRAMS],
     ground_truth.SEED, ground_truth.CAP,
-    extra_paths=[os.path.join(ground_truth.BENCH, "probes.py")]))')"
+    extra_paths=[os.path.join(ground_truth.BENCH, "probes.py"),
+                 os.path.join(ground_truth.BENCH, "execute.py")]))')"
   cached="$(python3 -c '
 import json,sys
 try:

@@ -27,8 +27,8 @@ DIFFLIB = [
      "SequenceMatcher(None,'abcdefg','acdfg').get_grouped_opcodes(3)"),
     ("autojunk_off", 6,
      "SequenceMatcher(None,list(range(40)),list(range(40)),autojunk=False).ratio()"),
-    ("ndif_small", 4, "ndif('qjrwpit','abcde')"),
-    ("ndif_long", 5, "ndif('abcdefghij','jihgfedcba')"),
+    ("ndiff_small", 4, "list(ndiff('qjrwpit','abcde'))"),
+    ("ndiff_long", 5, "list(ndiff('abcdefghij','jihgfedcba'))"),
     ("unified_diff", 5,
      "list(unified_diff('a\\nb\\nc\\nd\\n'.splitlines(1),'a\\nc\\ne\\nd\\n'.splitlines(1)))"),
     ("context_diff", 5,
@@ -96,13 +96,18 @@ SHLEX = [
     ("split_comment", 2, "split('cmd arg1 # trailing comment')"),
     ("split_escapes", 3, "split('a\\\\ b c\\\\\"d e')"),
     ("split_multi_ws", 2, "split('a    b\\tc')"),
-    ("split_trailing_bs", 2, "split('a b \\\\')"),
+    # These three are error paths: the library is *supposed* to raise. Catching
+    # and returning the exception makes them real observations -- a mutation
+    # that stops the library from rejecting bad input is exactly the kind of
+    # regression an error-path probe should catch. Returning nothing (an
+    # uncaught raise) would make them inert instead.
+    ("split_trailing_bs", 2, "_caught(lambda: split('a b \\\\'))"),
+    ("split_unbalanced", 2, "_caught(lambda: split(\"a 'b\"))"),
     ("stream_ws", 4, "_stream(_m,\"a 'b c' d\\n\")"),
     ("punctuation", 4, "_punct(_m,'x=1; y+=2;; z')"),
     ("commenters", 3, "_commenters(_m,'a b ; comment c')"),
     ("quotes_custom", 3, "split('a <b c> d')"),
     ("split_unicode", 2, "split('مرحبا بالعالم')"),
-    ("split_unbalanced", 2, "split(\"a 'b\")"),
     ("split_only_space", 1, "split('    ')"),
     ("split_dquote_ws", 3, "split('a \"  b  \" c')"),
 ]
@@ -188,8 +193,22 @@ def _punct(_m, s):
 
 
 def _commenters(_m, s):
-    lex = _m.shlex(s, posix=True, commenters=';', whitespace_split=True)
+    # `commenters` is an attribute, not a constructor keyword: passing it to
+    # __init__ raises TypeError, which made this probe inert.
+    lex = _m.shlex(s, posix=True)
+    lex.commenters = ';'
+    lex.whitespace_split = True
     return list(lex)
+
+
+def _caught(thunk):
+    # An error path is a legitimate observation. Returning the exception rather
+    # than propagating it means a mutation that stops the library rejecting bad
+    # input shows up as a difference, instead of the probe contributing nothing.
+    try:
+        return ('ok', thunk())
+    except Exception as exc:
+        return ('raised', type(exc).__name__, str(exc))
 '''
 
 NAMES = {

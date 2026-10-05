@@ -22,16 +22,32 @@ REPR_CAP = 20000
 
 
 def _canonical(value) -> str:
-    """Byte-stable rendering for the types probes may return."""
+    """Byte-stable, *type-faithful* rendering for the types probes may return.
+
+    Types are tagged because the un-tagged form is ambiguous: without a tag,
+    the integer 1 and the string "1" render identically, so a mutation that
+    changed a probe's return from 1 to "1" would be scored as invisible -- a
+    false negative in the measurement itself, which is the one place a silent
+    error is least acceptable. A tagged form makes every distinct value distinct.
+    """
     if isinstance(value, str):
-        return value
-    if isinstance(value, (int, float, bool, type(None))):
-        return repr(value)
+        return f"s:{value}"
+    if isinstance(value, bool):
+        return f"b:{value}"
+    if isinstance(value, int):
+        return f"i:{value}"
+    if isinstance(value, float):
+        return f"f:{value!r}"
+    if value is None:
+        return "n:None"
     if isinstance(value, (list, tuple)):
-        return "(" + ",".join(_canonical(v) for v in value) + ")"
+        open_c, close_c = ("l", "]") if isinstance(value, list) else ("t", ")")
+        return open_c + ",".join(_canonical(v) for v in value) + close_c
     if isinstance(value, dict):
-        return "{" + ",".join(f"{_canonical(k)}:{_canonical(v)}" for k, v in value.items()) + "}"
-    return repr(value)
+        return "d{" + ",".join(
+            f"{_canonical(k)}:{_canonical(v)}" for k, v in value.items()
+        ) + "}"
+    return f"r:{value!r}"
 
 
 def _child(conn, src_text: str, probe_src: str) -> None:

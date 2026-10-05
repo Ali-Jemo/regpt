@@ -34,7 +34,8 @@ def build(cache_path: str, workers: int = 4, verbose: bool = True) -> dict:
             [os.path.join(PROGRAMS_DIR, f"{m}.py") for m in probes.PROGRAMS],
             SEED,
             CAP,
-            extra_paths=[os.path.join(BENCH, "probes.py")],
+            extra_paths=[os.path.join(BENCH, "probes.py"),
+                        os.path.join(BENCH, "execute.py")],
         ),
         "programs": {},
     }

@@ -147,14 +147,16 @@ def build(path: str, seed: int, cap: int):
 def fingerprint(paths, seed, cap, extra_paths=()) -> str:
     """Identity of the benchmark instance.
 
-    Covers the program sources, the probe definitions and the mutation settings.
-    The probe definitions have to be in here: the influence matrix is built by
-    running probes against mutants, so changing a probe changes the matrix. A
-    fingerprint that ignored probes would let an edited probe set keep serving a
-    stale matrix, which is exactly the kind of error that looks like a result.
+    Covers the program sources, the probe definitions, the execution oracle and
+    the mutation settings. Each of those changes the influence matrix by
+    construction: the matrix is built by running probes against mutants and
+    comparing observations, so a change to any of the three -- or to how an
+    observation is rendered to a comparable form -- changes the answer. A
+    fingerprint that ignored any of them would let an edit keep serving a stale
+    matrix, which is exactly the kind of error that looks like a result.
     """
     h = hashlib.sha256()
     for p in list(paths) + list(extra_paths):
         h.update(open(p, "rb").read())
-    h.update(f"|seed={seed}|cap={cap}|v4".encode())
+    h.update(f"|seed={seed}|cap={cap}|v5".encode())
     return h.hexdigest()[:16]

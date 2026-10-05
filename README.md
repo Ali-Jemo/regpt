@@ -122,6 +122,8 @@ suite minimisation (2005) share the cover step but not the prediction.
     bench/evaluate.py   exploration budget and reporting
     bench/methods.py    baselines + the subject method
     bench/run_bench.py  scoring, emits METRIC lines
+    tests/test_soundness.py  is the harness trustworthy? (gates the run)
+    tests/test_behaviour.py  does it behave as documented? (gates the run)
 
 ## Ground truth
 
@@ -131,14 +133,43 @@ The matrix is the measured behaviour of real code. The cache is fingerprinted
 over the program sources *and* the probe definitions, so an edited probe set
 forces a rebuild rather than silently serving a stale matrix.
 
+## Tests
+
+    python3 tests/test_soundness.py     # is this harness trustworthy?
+    python3 tests/test_behaviour.py     # does it behave as documented?
+
+36 tests, ~6,300 assertions, ~90s. Both run as stage 1 of `autoresearch.sh` and
+gate it: a soundness failure exits 1 and no benchmark result is printed.
+
+The split matters. *Soundness* asks whether the number means anything; *behaviour*
+asks whether the method and the scoring do what they claim. A harness can be
+perfectly sound and still score the wrong thing.
+
+Every soundness test corresponds to a bug that actually occurred while building
+this, because a test that cannot fail is worse than no test — it is believed:
+
+| test | bug it catches |
+|---|---|
+| subject method reads ground truth | a method peeking at the influence matrix scores perfectly and proves nothing |
+| oracle bills every query | exploration becoming free |
+| query cost is a realistic fraction of the suite | the phase-1 model that made `keep_all` unbeatable by construction |
+| fingerprint covers probes and the executor | an edited probe set or a changed observation encoding silently serving a stale matrix |
+| every probe returns a value | five probes that had been raising since they were written |
+| probe reach is never spuriously empty | a call-graph resolver reporting three working probes as reaching nothing |
+| canonical rendering is type-faithful | `1` and `"1"` rendering identically, so a mutation changing one to the other would be invisible |
+| metric responds to method change | a score that cannot tell a working method from a broken one |
+
+The last is a permanent negative control: forcing the method to `keep_all` must
+move the score to 1.000, and injecting a ground-truth peek must fail the gate.
+
 ## Known defect
 
-5 of 101 probes never return a value on the original program and so discriminate
-nothing: `ndif_small` and `ndif_long` call `ndif` when the function is `ndiff`,
-and `commenters` passes a `commenters=` keyword that `shlex.__init__` does not
-accept. `bench/probes.py` is off-limits for method work, so this was reported
-rather than fixed. It does not bias the score — broken probes are excluded from
-the influence matrix and never selected — but 5% of the probe budget is inert.
+None outstanding. The five probes that had been raising since they were written
+are fixed: `ndif` was a typo for `ndiff` and returned a generator that had to be
+consumed; `commenters` was passed as a constructor keyword when `shlex.__init__`
+takes no such argument; and two error-path probes were propagating exceptions
+instead of capturing them, so a mutation that stopped the library rejecting bad
+input could not be seen. All 101 probes now return a value.
 
 ## Metrics
 
