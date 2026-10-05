@@ -62,4 +62,17 @@ if [[ "$need_build" == "1" ]]; then
   (cd "$BENCH" && python3 ground_truth.py "$GT")
 fi
 
-(cd "$BENCH" && python3 run_bench.py)
+# Run the benchmark once. The full report is printed; the metrics are also
+# written to the Actions step output so CI can assert on them without
+# re-parsing logs. Locally that output file is unset and nothing is duplicated.
+METRICS_FILE="$(mktemp)"
+trap 'rm -f "$METRICS_FILE"' EXIT
+(cd "$BENCH" && python3 run_bench.py) | tee "$METRICS_FILE"
+
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  {
+    echo "metrics<<METRIC_EOF"
+    grep '^METRIC ' "$METRICS_FILE" || true
+    echo "METRIC_EOF"
+  } >> "$GITHUB_OUTPUT"
+fi

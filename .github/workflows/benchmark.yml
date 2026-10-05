@@ -1,0 +1,65 @@
+name: benchmark
+
+# The benchmark is the claim, so it gets re-checked on every push rather than
+# only on the machine that produced it. The ground-truth fixture is committed,
+# so a run is seconds unless the fingerprint moved -- in which case the job
+# rebuilds it by real execution and checks that the number still holds.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Show versions
+        run: python3 -VV
+
+      - name: Run the benchmark
+        id: bench
+        run: bash autoresearch.sh
+
+      - name: Assert the reported contract
+        run: |
+          set -euo pipefail
+          out="${{ steps.bench.outputs.metrics }}"
+          # Detection is a hard constraint, not a tradeoff: a run that misses a
+          # live mutant is charged the safe fallback, so a lower detection is a
+          # regression even when cost looks better.
+          detection=$(grep -oP '(?<=^METRIC detection=)[0-9.]+' <<< "$out" | tail -1)
+          ratio=$(grep -oP '(?<=^METRIC cost_ratio=)[0-9.]+' <<< "$out" | tail -1)
+          echo "cost_ratio=$ratio detection=$detection"
+          test "$detection" = "1.000000" || {
+            echo "::error::detection regressed to $detection (expected 1.000000)"
+            exit 1
+          }
+          # keep_all is the safe reference at 1.0; a method above it is worse
+          # than doing nothing.
+          awk -v r="$ratio" 'BEGIN { exit !(r <= 1.0) }' || {
+            echo "::error::cost_ratio $ratio is worse than keep_all (1.0)"
+            exit 1
+          }
+
+      - name: Report
+        run: |
+          {
+            echo "### regpt benchmark"
+            echo
+            echo '```'
+            ${{ steps.bench.outputs.metrics }}
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
