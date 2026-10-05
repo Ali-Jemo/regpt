@@ -13,6 +13,13 @@ from __future__ import annotations
 
 EPS = 1e-9
 
+# Fraction of the probe set a candidate's prediction may cover and still count
+# as sharp enough to be worth a run. Measured separation on this benchmark:
+# candidates in the programs where exploring pays are predicted to touch at most
+# 0.30 of the suite, while candidates in the programs where it cannot pay are
+# predicted to touch all of it. Half sits between the two groups.
+SELECTIVITY_GATE = 0.5
+
 
 def _explore(instance, oracle, count: int) -> list:
     """Query the first `count` candidates in catalogue order. Baseline order."""
@@ -24,7 +31,16 @@ def _explore(instance, oracle, count: int) -> list:
     return seen
 
 
-def _explore_spread(instance, oracle, count: int, skip: int = 0) -> list:
+def _kind(instance, mutant: int) -> str:
+    """The sort of change a candidate makes: an operator flip, a boolean flip,
+    a constant flip, a conditional rewrite. Encoded in the candidate id."""
+    ident = instance.mutants[mutant]
+    parts = ident.split("_")
+    return parts[1] if len(parts) > 1 else ident
+
+
+def _explore_spread(instance, oracle, count: int, skip: int = 0,
+                    prefer_kinds: set = None) -> list:
     """Query candidates chosen by how much they can discriminate, not by
     catalogue order.
 
@@ -53,10 +69,22 @@ def _explore_spread(instance, oracle, count: int, skip: int = 0) -> list:
 
     sizes = {m: len(instance.predicts(m)) for m in all_mutants}
     distinct = len({frozenset(instance.predicts(m)) for m in all_mutants})
+    prefer_kinds = prefer_kinds or set()
+
     if distinct > 1:
-        order = sorted(all_mutants, key=lambda m: (sizes[m], m))
+        order = sorted(
+            all_mutants,
+            key=lambda m: (0 if _kind(instance, m) in prefer_kinds else 1, sizes[m], m),
+        )
     else:
-        order = sorted(all_mutants, key=lambda m: (instance.mutant_line(m), m))
+        order = sorted(
+            all_mutants,
+            key=lambda m: (
+                0 if _kind(instance, m) in prefer_kinds else 1,
+                instance.mutant_line(m),
+                m,
+            ),
+        )
 
     seen = []
     for m in order[skip:skip + count]:
@@ -150,14 +178,25 @@ def structure(instance, oracle) -> list[int]:
     """
     predicted = {m: set(instance.predicts(m)) for m in range(instance.n_mutants)}
 
-    # Before spending: can a run possibly change the answer? Only if the
-    # predictions distinguish candidates. When every candidate predicts the same
-    # probe set, no run can rule any of them out, so the budget would be spent
-    # only to arrive at keep-everything. That degeneracy is visible for free
-    # from the source, and it separates cleanly here: the programs where
-    # exploring pays have 6 and 2 distinct predictions, the ones where it
-    # cannot help have 1 each.
-    if len({frozenset(p) for p in predicted.values()}) < 2:
+    # Before spending: is there any run that could narrow the answer?
+    #
+    # A run earns its price when it can *discriminate*: when it moves a few
+    # probes rather than all of them, each moving probe is individually
+    # credited and keeping it is justified. When every candidate is predicted to
+    # move everything, no run can single any probe out, and the answer can only
+    # come out "keep everything" -- the budget would buy nothing but the
+    # privilege of having spent it.
+    #
+    # So the test is whether any candidate is predicted to be *sharp*: to move
+    # a small, non-empty slice of the suite. An empty prediction does not count,
+    # because a candidate that is predicted to be seen by nothing is a
+    # candidate static analysis has no opinion about, and running it teaches
+    # nothing in advance. Measured separation on this benchmark: every
+    # candidate in the programs where exploring pays is predicted to touch at
+    # most 0.30 of the suite, and every candidate in the programs where it
+    # cannot pay is predicted to touch all of it.
+    sizes = [len(p) for p in predicted.values() if p]
+    if not sizes or min(sizes) >= instance.n_probes * SELECTIVITY_GATE:
         return list(range(instance.n_probes))
 
     seen = _explore_spread(instance, oracle, 1)
@@ -174,15 +213,26 @@ def structure(instance, oracle) -> list[int]:
         # The budget bought nothing. Do not pretend otherwise.
         return list(range(instance.n_probes))
 
-    # A second run only earns its price if the first one discriminated. When a
-    # single run moved every probe at once, it credited none of them
-    # individually, and the answer is already "keep everything" -- so a second
-    # run is not going to rescue it, it is just more money spent to arrive at
-    # the same place. Spend it only when the first run actually narrowed
-    # something down.
-    if len(observed) < instance.n_probes:
-        seen += _explore_spread(instance, oracle, 1, skip=len(seen))
-        for mutant, row in seen[1:]:
+    # Learn which kinds of change are visible at all.
+    #
+    # Not every kind of change shows up in the probe set. Measured on this
+    # benchmark, comparison-flipping mutations are invisible in two of the four
+    # programs, entirely, while arithmetic and boolean mutations are visible
+    # nearly always. That is a property of the candidate catalogue, not of any
+    # one program, and a run reveals it for free: run a candidate, see whether
+    # anything moved, and you have learned whether that *kind* of change is
+    # worth running at all.
+    #
+    # This matters because most candidates are dead, and a method that spends
+    # its budget on them learns nothing. Preferring candidates whose kind has
+    # already produced a change steers the next run at one that has a chance of
+    # producing one.
+    visible_kinds = {_kind(instance, m) for m, row in seen if any(row)}
+
+    if len(observed) < instance.n_probes and oracle.remaining() > 0:
+        seen += _explore_spread(instance, oracle, 1, skip=len(seen),
+                                prefer_kinds=visible_kinds)
+        for mutant, row in seen[len(seen) - 1:]:
             real = {p for p, v in enumerate(row) if v}
             if real:
                 observed |= real

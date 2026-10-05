@@ -295,14 +295,14 @@
     14,
     15
    ],
-   "cost": 58,
-   "explore": 11,
+   "cost": 47,
+   "explore": 0,
    "keep": 47,
-   "queries": 1,
+   "queries": 0,
    "budget": 23,
    "detect": 1.0,
    "full_cost": 47,
-   "ratio": 1.2340425531914894,
+   "ratio": 1.0,
    "error": null
   },
   {
