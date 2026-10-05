@@ -107,6 +107,73 @@ SHLEX = [
     ("split_dquote_ws", 3, "split('a \"  b  \" c')"),
 ]
 
+CONFIGPARSER = [
+    ("read_basic", 3, "(_read(_m), sorted(_m.ConfigParser().sections()))"),
+    ("getint", 2, "_c(_m)['s'].getint('k')"),
+    ("getfloat", 2, "_c(_m)['s'].getfloat('x')"),
+    ("getboolean", 2, "_c(_m)['s'].getboolean('flag')"),
+    ("sections", 2, "_c(_m).sections()"),
+    ("options", 2, "_c(_m).options('s')"),
+    ("defaults", 2, "dict(_c(_m).defaults())"),
+    ("items", 2, "dict(_c(_m)['s'].items())"),
+    ("interp_basic", 2, "_c(_m)['s'].get('b_n', fallback=99)"),
+    ("interp_interp", 2, "_c(_m)['s'].get('%(base)s_n', fallback=1)"),
+    ("set_get", 2, "_setget(_m)"),
+    ("remove_opt", 2, "(_c(_m).remove_option('s','k'), _c(_m).options('s'))"),
+    ("add_section", 2, "(_c(_m).add_section('b'), _c(_m).sections())"),
+    ("no_section", 2, "_c(_m).has_section('nope')"),
+    ("converters", 2, "_c(_m).get('s','k', raw=True)"),
+    ("multiline", 2, "_c(_m)['s'].get('multi')"),
+    ("no_interp_val", 2, "_c(_m).get('s','pct', raw=True)"),
+    ("spaces", 2, "_c(_m)['s'].get('k')"),
+]
+
+CONFIGPARSER_HELPERS = '''
+def _c(_m):
+    c = _m.ConfigParser()
+    c.read_string(
+        "[s]\\n"
+        "k = 1\\n"
+        "x = 2.5\\n"
+        "flag = yes\\n"
+        "base = b\\n"
+        "b_n = 7\\n"
+        "multi = one\\n"
+        "    two\\n"
+        "pct = 50%%\\n"
+    )
+    return c
+
+
+def _read(_m):
+    c = _m.ConfigParser()
+    c.read_string("[a]\\nk = 1\\n")
+    return sorted(c.sections())
+
+
+def _setget(_m):
+    c = _c(_m)
+    c.set('s', 'k2', 'v')
+    return c.get('s', 'k2')
+'''
+
+FNMATCH = [
+    ("fnmatch_star", 2, "_m.fnmatch('a.txt', '*.txt')"),
+    ("fnmatch_multi", 2, "_m.fnmatch('abc.def', '*.???')"),
+    ("fnmatch_no", 2, "_m.fnmatch('a.py', '*.txt')"),
+    ("fnmatch_q", 2, "_m.fnmatch('a?c', 'a?c')"),
+    ("filter_basic", 2, "sorted(_m.filter(['a.txt','b.py','c.txt'], '*.txt'))"),
+    ("translate_star", 2, "_m.translate('*.txt')"),
+    ("translate_q", 2, "_m.translate('a?c')"),
+    ("fnmatchcase_star", 2, "_m.fnmatchcase('a.txt', '*.TXT')"),
+    ("fnmatchcase_no", 2, "_m.fnmatchcase('a.txt', '*.py')"),
+    ("translate_brackets", 2, "_m.translate('[a-c]x')"),
+    ("filtercase", 2, "sorted(_m.filter(['A.TXT','b.txt'], '*.txt'))"),
+    ("star_nostar", 2, "_m.fnmatch('noext', '*')"),
+    ("empty_pat", 2, "_m.fnmatch('x', '')")]
+
+FNMATCH_HELPERS = ''
+
 HELPERS = '''
 def _stream(_m, s):
     lex = _m.shlex(s, posix=True)
@@ -132,9 +199,18 @@ NAMES = {
     "textwrap": "    wrap = _m.wrap\n    fill = _m.fill\n    TextWrapper = _m.TextWrapper\n",
     "fractions": "    from decimal import Decimal\n    Fraction = _m.Fraction\n",
     "shlex": "    split = _m.split\n",
+    "configparser": "",
+    "fnmatch": "",
 }
 
-PROGRAMS = ("difflib", "textwrap", "fractions", "shlex")
+PROGRAMS = ("difflib", "textwrap", "fractions", "shlex", "configparser", "fnmatch")
+
+
+PREAMBLE = {
+    "shlex": HELPERS,
+    "configparser": CONFIGPARSER_HELPERS,
+    "fnmatch": FNMATCH_HELPERS,
+}
 
 
 def probe_source(module: str, body: str) -> str:
@@ -144,7 +220,7 @@ def probe_source(module: str, body: str) -> str:
     helpers take it as an argument for the same reason.
     """
     return (
-        HELPERS
+        PREAMBLE.get(module, "")
         + "\ndef __regpt_probe__(_m):\n"
         + NAMES[module]
         + "\n    return "
