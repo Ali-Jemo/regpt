@@ -31,7 +31,10 @@ def build(cache_path: str, workers: int = 4, verbose: bool = True) -> dict:
         "seed": SEED,
         "cap": CAP,
         "fingerprint": mutate.fingerprint(
-            [os.path.join(PROGRAMS_DIR, f"{m}.py") for m in probes.PROGRAMS], SEED, CAP
+            [os.path.join(PROGRAMS_DIR, f"{m}.py") for m in probes.PROGRAMS],
+            SEED,
+            CAP,
+            extra_paths=[os.path.join(BENCH, "probes.py")],
         ),
         "programs": {},
     }

@@ -23,10 +23,11 @@ if [[ ! -f "$GT" ]]; then
   need_build=1
 else
   current="$(cd "$BENCH" && python3 -c '
-import ground_truth, mutate, os
+import ground_truth, mutate, os, probes
 print(mutate.fingerprint(
-    [os.path.join(ground_truth.PROGRAMS_DIR, f"{m}.py") for m in __import__("probes").PROGRAMS],
-    ground_truth.SEED, ground_truth.CAP))')"
+    [os.path.join(ground_truth.PROGRAMS_DIR, f"{m}.py") for m in probes.PROGRAMS],
+    ground_truth.SEED, ground_truth.CAP,
+    extra_paths=[os.path.join(ground_truth.BENCH, "probes.py")]))')"
   cached="$(python3 -c '
 import json,sys
 try:
