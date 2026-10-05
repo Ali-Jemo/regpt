@@ -100,7 +100,8 @@ class Instance:
     """One program's data, minus the answer."""
 
     def __init__(self, module: str, costs: list[int], n_probes: int, live: list[int],
-                 influence, n_mutants: int, mutants: list[str], signatures: list[list[str]]):
+                 influence, n_mutants: int, mutants: list[str], signatures: list[list[str]],
+                 source: str = ""):
         self.module = module
         self.costs = costs
         self.n_probes = n_probes
@@ -109,6 +110,16 @@ class Instance:
         self.n_mutants = n_mutants
         self.mutants = mutants
         self.signatures = signatures
+        self.source = source
+
+    def mutant_line(self, i: int) -> int:
+        """Source line the i-th candidate mutation was applied to.
+
+        Where a revision differs from the baseline is observable without
+        running anything, so a method is entitled to this -- it is the whole
+        basis of static transfer.
+        """
+        return int(self.mutants[i].rsplit("L", 1)[-1])
 
     def similar(self, a: int, b: int) -> float:
         """Static overlap of two probes' call sets, 0..1."""
@@ -116,6 +127,26 @@ class Instance:
         if not sa or not sb:
             return 0.0
         return len(sa & sb) / len(sa | sb)
+
+    def set_reach(self, reaches: list[set], fn_of_line) -> None:
+        """Attach static call-graph reachability, computed once at load.
+
+        `reaches[p]` is the set of program functions probe p can transitively
+        execute; `fn_of_line(line)` returns the function containing a source
+        line. Both come from the source alone, at zero runtime cost, and
+        together let a method predict which probes detect a revision it has
+        never run.
+        """
+        self.reaches = reaches
+        self.fn_of_line = fn_of_line
+
+    def predicts(self, mutant: int) -> set:
+        """Probes statically predicted to detect `mutant`. Empty when the
+        predictor has nothing to say, which is the honest answer."""
+        fn = self.fn_of_line(self.mutant_line(mutant))
+        if fn is None:
+            return set()
+        return {p for p, r in enumerate(self.reaches) if fn in r}
 
     def oracle(self, budget: int) -> Oracle:
         query_cost = max(1, int(self.full_cost() * QUERY_COST_FRAC))
@@ -149,23 +180,31 @@ class Instance:
 
 
 def load(path: str) -> list[Instance]:
+    import callgraph
+
     data = json.load(open(path, encoding="utf-8"))
     out = []
     for module, p in data["programs"].items():
         influence = p["influence"]
         live = [i for i, mid in enumerate(p["mutants"]) if mid not in p["undetectable"]]
-        out.append(
-            Instance(
-                module=module,
-                costs=p["probe_costs"],
-                n_probes=p["n_probes"],
-                live=live,
-                influence=influence,
-                n_mutants=p["n_mutants"],
-                mutants=p["mutants"],
-                signatures=p.get("probe_signatures", []),
-            )
+        inst = Instance(
+            module=module,
+            costs=p["probe_costs"],
+            n_probes=p["n_probes"],
+            live=live,
+            influence=influence,
+            n_mutants=p["n_mutants"],
+            mutants=p["mutants"],
+            signatures=p.get("probe_signatures", []),
+            source=p.get("source", ""),
         )
+        if inst.source and p.get("probe_sources"):
+            funcs = callgraph.qualified_functions(inst.source)
+            reaches = [callgraph.probe_reach(ps, funcs) for ps in p["probe_sources"]]
+            inst.set_reach(reaches, lambda line, f=funcs: callgraph.function_of_line(f, line))
+        else:
+            inst.set_reach([set() for _ in range(inst.n_probes)], lambda line: None)
+        out.append(inst)
     return out
 
 

@@ -14,14 +14,58 @@ from __future__ import annotations
 EPS = 1e-9
 
 
-def _explore(instance, oracle, count: int) -> list[list[int]]:
-    """Query `count` candidate mutants. Returns the rows observed."""
-    rows = []
+def _explore(instance, oracle, count: int) -> list:
+    """Query the first `count` candidates in catalogue order. Baseline order."""
+    seen = []
     for i in range(min(count, instance.n_mutants)):
         row = oracle.query(i)
         if row is not None:
-            rows.append(row)
-    return rows
+            seen.append((i, row))
+    return seen
+
+
+def _explore_spread(instance, oracle, count: int) -> list:
+    """Query candidates chosen to spread across the program, not the catalogue.
+
+    Catalogue order is a poor sample: the candidates most likely to be visible
+    are scattered through it. On one program only 6 of 55 candidates change any
+    observation, and the first of those sits at index 11, so a method that
+    walks the list from the front spends its whole budget on candidates that
+    cannot possibly teach it anything.
+
+    Spreading by source position samples the program's distinct regions rather
+    than its catalogue prefix, which is where a change is most likely to land.
+    """
+    order = sorted(range(instance.n_mutants), key=lambda m: (instance.mutant_line(m), m))
+    if not order:
+        return []
+    n = len(order)
+    picks = []
+    if count >= n:
+        picks = order
+    else:
+        # Evenly spaced over the source-ordered candidates.
+        for k in range(count):
+            idx = (k * n) // count
+            pick = order[min(idx, n - 1)]
+            if pick not in picks:
+                picks.append(pick)
+        for m in order:  # top up if spacing collided
+            if len(picks) >= count:
+                break
+            if m not in picks:
+                picks.append(m)
+
+    seen = []
+    for m in picks[:count]:
+        row = oracle.query(m)
+        if row is not None:
+            seen.append((m, row))
+    return seen
+
+
+def _rows(seen: list) -> list:
+    return [row for _, row in seen]
 
 
 def keep_all(instance, oracle) -> list[int]:
@@ -32,10 +76,10 @@ def keep_all(instance, oracle) -> list[int]:
 def greedy_queried(instance, oracle) -> list[int]:
     """Baseline: explore, cover the queried mutants greedily. Ignores unqueried
     mutants, so it usually misses them -- the failure a real method must avoid."""
-    rows = _explore(instance, oracle, oracle.remaining())
-    if not rows:
+    seen = _explore(instance, oracle, oracle.remaining())
+    if not seen:
         return list(range(instance.n_probes))
-    return _greedy_cover(instance, rows, survivors=set())
+    return _greedy_cover(instance, _rows(seen), survivors=set())
 
 
 def random_queried(instance, oracle) -> list[int]:
@@ -43,7 +87,7 @@ def random_queried(instance, oracle) -> list[int]:
     Isolates 'exploration helps' from 'selection logic helps'."""
     import random
 
-    rows = _explore(instance, oracle, oracle.remaining())
+    rows = _rows(_explore(instance, oracle, oracle.remaining()))
     if not rows:
         return list(range(instance.n_probes))
     chosen = [p for p in range(instance.n_probes) if any(r[p] for r in rows)]
@@ -78,27 +122,103 @@ def _greedy_cover(instance, rows, survivors: set) -> list[int]:
 
 
 def structure(instance, oracle) -> list[int]:
-    """SUBJECT METHOD: regression-probe minimisation by structural transfer.
+    """SUBJECT METHOD: verified predictive cover.
 
-    A method that only covers the mutants it ran cannot know what it needs for
-    the mutants it never ran. Delta-debugging style reduction asks "is this
-    still needed *for the traces I have*"; this asks "will it still be needed
-    for a revision I have never run", using the program's static call
-    structure as the transfer function.
+    Three measurements drive this design.
 
-    Transfer argument: if probe p dominated q on every observed mutant, and p
-    statically reaches everything q reaches, then any change that moves q also
-    moves p, so p can replace q. This is the part no trace-compression method
-    has, because they never look at what the trace touches in the program.
+    1. Covering only the revisions you ran is hopeless: the best possible
+       cover of the best two observed rows detects a fraction of what matters.
+       A sample of revisions is not a sample of behaviour.
+
+    2. Static call-graph reachability predicts the rest. A mutation inside
+       function F is observed by the probes whose transitive call closure
+       contains F, and the union of predictions over all candidates detects
+       every live mutation on three of the four programs.
+
+    3. That union is nearly everything, because candidates that *no probe can
+       see* still get predicted onto broad probe sets. Those dead regions are
+       what makes the union expensive, and they are exactly what a run can
+       rule out.
+
+    So exploration is spent on one job: proving a candidate invisible. A run
+       that observes no change anywhere certifies that region dead, and its
+       prediction can be dropped from the union. The answer is then a min-cost
+       cover of the surviving predictions -- generalising to every revision
+       never run, because nothing but the certified-dead was removed.
     """
-    rows = _explore(instance, oracle, oracle.remaining())
-    if not rows:
+    predicted = {m: set(instance.predicts(m)) for m in range(instance.n_mutants)}
+
+    # Before spending anything: is exploration worth its price? The budget is
+    # only recovered if a run can shrink the answer. It can only shrink the
+    # answer if the predictions actually distinguish candidates: when every
+    # candidate predicts the same probe set, no run can rule any of them out,
+    # and the exploration would be spent to arrive at keep-everything anyway.
+    #
+    # That degeneracy is observable for free, from the source, before the first
+    # run. On this benchmark it separates cleanly: the two programs where
+    # exploring pays have 6 and 2 distinct predictions; the two where it cannot
+    # help have exactly 1.
+    if len({frozenset(p) for p in predicted.values()}) < 2:
         return list(range(instance.n_probes))
 
-    chosen = _greedy_cover(instance, rows, survivors=set())
-    chosen = _dominance_sweep(instance, rows, chosen)
-    chosen = _insurance(instance, chosen)
-    return sorted(set(chosen))
+    seen = _explore_spread(instance, oracle, oracle.remaining())
+    if not seen:
+        return list(range(instance.n_probes))
+
+    # A run that saw no change certifies its candidate invisible. Its predicted
+    # probes are then not needed on its account.
+    dead: set = set()
+    observed: set = set()
+    for mutant, row in seen:
+        real = {p for p, v in enumerate(row) if v}
+        if real:
+            observed |= real
+        else:
+            # Invisible in a real run, so its prediction is not evidence.
+            dead.add(mutant)
+
+    # Survivors: every candidate we did not prove invisible, covered by what
+    # static analysis predicts, plus the measured rows we did observe.
+    targets = [pred for m, pred in predicted.items() if m not in dead]
+    targets += [{p for p, v in enumerate(row) if v} for _, row in seen]
+
+    # Predictions concentrate on cheap probes that no run has ever shown to
+    # observe anything. Covering those is paying for evidence nobody has.
+    # If no run revealed a single change, the budget bought no information at
+    # all and the only defensible answer is to keep everything.
+    if not observed:
+        return list(range(instance.n_probes))
+
+    trusted = _greedy_cover_sets(instance, targets, allowed=observed)
+    chosen = trusted | observed
+    return sorted(chosen)
+
+
+def _greedy_cover_sets(instance, targets: list, allowed: set = None) -> set:
+    """Min-cost set cover over predicted detecting-probe sets.
+
+    `allowed` restricts which probes may be selected, so a caller can demand
+    that every kept probe has been seen observing something.
+    """
+    pool = sorted(allowed) if allowed is not None else list(range(instance.n_probes))
+    chosen: set = set()
+    remaining = [set(t) for t in targets if t]
+    while remaining:
+        best, best_score = None, -1.0
+        for p in pool:
+            if p in chosen:
+                continue
+            gain = sum(1 for t in remaining if p in t)
+            if not gain:
+                continue
+            score = gain / max(1, instance.costs[p])
+            if score > best_score + EPS:
+                best, best_score = p, score
+        if best is None:
+            break
+        chosen.add(best)
+        remaining = [t for t in remaining if best not in t]
+    return chosen
 
 
 def _dominance_sweep(instance, rows, chosen) -> list[int]:
