@@ -34,9 +34,11 @@ jobs:
         run: bash autoresearch.sh
 
       - name: Assert the reported contract
+        env:
+          METRICS: ${{ steps.bench.outputs.metrics }}
         run: |
           set -euo pipefail
-          out="${{ steps.bench.outputs.metrics }}"
+          out="${METRICS}"
           # Detection is a hard constraint, not a tradeoff: a run that misses a
           # live mutant is charged the safe fallback, so a lower detection is a
           # regression even when cost looks better.
@@ -55,11 +57,16 @@ jobs:
           }
 
       - name: Report
+        env:
+          METRICS: ${{ steps.bench.outputs.metrics }}
         run: |
           {
             echo "### regpt benchmark"
             echo
             echo '```'
-            ${{ steps.bench.outputs.metrics }}
+            # Step outputs arrive as an environment variable, not as text to
+            # splice into the script: writing them bare would make the shell try
+            # to run each line as a command.
+            echo "${METRICS}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

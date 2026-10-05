@@ -29,6 +29,8 @@ TESTS="$HERE/tests"
 GT="$BENCH/fixtures/ground_truth.json"
 
 if [[ "${REGPT_SKIP_TESTS:-0}" != "1" ]]; then
+  echo "== workflow ==" >&2
+  python3 "$TESTS/test_workflow.py" >&2
   echo "== soundness ==" >&2
   python3 "$TESTS/test_soundness.py" >&2
   echo "== behaviour ==" >&2
