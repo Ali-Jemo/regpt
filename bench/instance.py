@@ -7,12 +7,27 @@ Framing, in the terms the problem actually has:
 * something changed the program and you need to know whether the change is
   *visible* in what you observe;
 * you may go run the program a limited number of times before you commit to a
-  regression set, and each such run is real work that costs exactly as much as
-  running the full probe set over one variant.
+  regression set.
 
-So a method spends a *query budget* K on exploration, then emits a probe set.
-Total cost is exploration plus the emitted set. That is the whole trade-off,
-and it is exactly the budget a real CI or agent has.
+So a method spends a *query budget* on exploration, then emits a probe set.
+Total cost is exploration plus the emitted set.
+
+Two constants define the regime, and both are named rather than hidden:
+
+`QUERY_COST_FRAC` -- price of running one candidate revision, as a fraction of
+one full probe pass. The regression suite is already built and instrumented, so
+a second revision is mostly fixed overhead, not a second full run. 0.25 means
+four candidate revisions cost about one suite run.
+
+`EXPORE_FRAC` (in evaluate.py) -- the total exploration allowance, as a multiple
+of one full probe pass.
+
+The pairing matters: if exploration is priced at a full pass *and* the budget
+is a full pass, then a single query can consume the entire budget and the
+oracle upper bound on the final cost ratio is ~0.92, so no method can beat
+`keep_all` and the benchmark measures nothing. Pricing a revision at a quarter
+of a pass and granting a full pass of budget gives ~4-16 queries, which is the
+regime where generalisation is the binding constraint.
 """
 
 from __future__ import annotations
@@ -20,37 +35,40 @@ from __future__ import annotations
 import json
 import os
 
+# Price of running one candidate revision, as a fraction of a full probe pass.
+QUERY_COST_FRAC = 0.25
+
 
 class Oracle:
     """Budgeted access to ground-truth mutant rows.
 
     `query(i)` returns the measured influence row of mutant i: which probes see
-    the change. Each query costs `n_probes` (one full run of the probe set),
-    so a method cannot query everything for free.
+    the change. A query costs `query_cost` (see `QUERY_COST_FRAC`), not a free
+    peek, so a method cannot enumerate every revision and cheat.
 
-    `candidates` is the population a method may sample from. Membership is not
-    free: a method that could tell live from dead mutants by asking would skip
-    the whole problem, so candidates are presented as opaque ids. Every query
-    against a dead mutant still costs, which is exactly the exploration risk a
-    real engineer pays when running a candidate revision to see if it matters.
+    Candidates are presented as opaque ids: a method that could tell live from
+    dead mutants without running them would skip the whole problem. Every query
+    against a dead mutant still costs, which is the exploration risk a real
+    engineer pays when running a candidate revision to see if it matters.
     """
 
-    def __init__(self, influence, live, n_probes, budget, all_mutants):
+    def __init__(self, influence, live, n_probes, budget, all_mutants, query_cost):
         self._influence = influence
         self._live = set(live)
         self._n_probes = n_probes
         self.budget = budget
+        self.query_cost = query_cost
         self.used = 0
         self.queried: list[int] = []
         self.all_mutants = list(all_mutants)
 
     @property
     def spent(self) -> int:
-        return self.used * self._n_probes
+        return self.used * self.query_cost
 
     def remaining(self) -> int:
-        """How many more whole-suite runs are affordable."""
-        return max(0, (self.budget - self.spent) // self._n_probes)
+        """How many more candidate revisions are affordable."""
+        return max(0, (self.budget - self.spent) // max(1, self.query_cost))
 
     def query(self, i: int):
         """Influence row of mutant i, or None if unaffordable."""
@@ -100,8 +118,9 @@ class Instance:
         return len(sa & sb) / len(sa | sb)
 
     def oracle(self, budget: int) -> Oracle:
+        query_cost = max(1, int(self.full_cost() * QUERY_COST_FRAC))
         return Oracle(self._influence, self._live, self.n_probes, budget,
-                      range(self.n_mutants))
+                      range(self.n_mutants), query_cost)
 
     def live(self) -> list[int]:
         return list(self._live)

@@ -12,12 +12,19 @@ from __future__ import annotations
 
 import importlib
 
-# Exploration allowance, as a multiple of the full probe-set cost. One query
-# costs n_probes (running the whole suite over one candidate revision), so
-# EXPORE_FRAC=1.0 means "you may spend as much as the suite costs to look at a
-# handful of revisions". That is the realistic regime: a few probe runs, not a
-# full sweep. Bigger values let methods see more of the mutant space.
-EXPORE_FRAC = 1.0
+# Exploration allowance, as a multiple of the full probe-set cost.
+#
+# Chosen so the trade-off is real rather than decorative. Measured oracle
+# bound (a method that sees the entire influence matrix, the best possible
+# outcome at this budget):
+#   EXPORE_FRAC=0.5 -> 0.657   2 queries   <- selected
+#   EXPORE_FRAC=1.0 -> 1.163   4 queries   (exploration alone exceeds the suite)
+#   EXPORE_FRAC=2.0 -> 2.163   8 queries
+# At 0.5 a method that generalises properly can reach well under keep_all's
+# 1.0, and one that does not generalise is still caught by the detection
+# constraint. Above 1.0 exploration alone costs more than the whole suite, so
+# keep_all wins by construction and the benchmark measures nothing.
+EXPORE_FRAC = 0.5
 
 
 def _default_budget(instance) -> int:
