@@ -24,40 +24,42 @@ def _explore(instance, oracle, count: int) -> list:
     return seen
 
 
-def _explore_spread(instance, oracle, count: int) -> list:
-    """Query candidates chosen to spread across the program, not the catalogue.
+def _explore_spread(instance, oracle, count: int, skip: int = 0) -> list:
+    """Query candidates chosen by how much they can discriminate, not by
+    catalogue order.
 
     Catalogue order is a poor sample: the candidates most likely to be visible
     are scattered through it. On one program only 6 of 55 candidates change any
-    observation, and the first of those sits at index 11, so a method that
+    observation and the first of those sits at index 11, so a method that
     walks the list from the front spends its whole budget on candidates that
-    cannot possibly teach it anything.
+    cannot teach it anything.
 
-    Spreading by source position samples the program's distinct regions rather
-    than its catalogue prefix, which is where a change is most likely to land.
+    A selective candidate is an informative one. When a run moves a single
+    probe, that probe is individually credited: keeping it is justified. When
+    a run moves every probe at once, it says nothing about which of them is
+    required, and the method is left keeping the lot. The predicted probe-set
+    size is the free estimate of how selective a run will be, so candidates are
+    taken smallest-prediction-first.
+
+    Where every candidate predicts identically, prediction size cannot
+    discriminate and the tie falls back to spreading over the source, which at
+    least samples distinct regions of the program.
+
+    `skip` resumes the ranking past candidates already run.
     """
-    order = sorted(range(instance.n_mutants), key=lambda m: (instance.mutant_line(m), m))
-    if not order:
+    all_mutants = list(range(instance.n_mutants))
+    if not all_mutants:
         return []
-    n = len(order)
-    picks = []
-    if count >= n:
-        picks = order
+
+    sizes = {m: len(instance.predicts(m)) for m in all_mutants}
+    distinct = len({frozenset(instance.predicts(m)) for m in all_mutants})
+    if distinct > 1:
+        order = sorted(all_mutants, key=lambda m: (sizes[m], m))
     else:
-        # Evenly spaced over the source-ordered candidates.
-        for k in range(count):
-            idx = (k * n) // count
-            pick = order[min(idx, n - 1)]
-            if pick not in picks:
-                picks.append(pick)
-        for m in order:  # top up if spacing collided
-            if len(picks) >= count:
-                break
-            if m not in picks:
-                picks.append(m)
+        order = sorted(all_mutants, key=lambda m: (instance.mutant_line(m), m))
 
     seen = []
-    for m in picks[:count]:
+    for m in order[skip:skip + count]:
         row = oracle.query(m)
         if row is not None:
             seen.append((m, row))
@@ -158,7 +160,7 @@ def structure(instance, oracle) -> list[int]:
     if len({frozenset(p) for p in predicted.values()}) < 2:
         return list(range(instance.n_probes))
 
-    seen = _explore_spread(instance, oracle, oracle.remaining())
+    seen = _explore_spread(instance, oracle, 1)
     observed: set = set()
     dead: set = set()
     for mutant, row in seen:
@@ -171,6 +173,21 @@ def structure(instance, oracle) -> list[int]:
     if not observed:
         # The budget bought nothing. Do not pretend otherwise.
         return list(range(instance.n_probes))
+
+    # A second run only earns its price if the first one discriminated. When a
+    # single run moved every probe at once, it credited none of them
+    # individually, and the answer is already "keep everything" -- so a second
+    # run is not going to rescue it, it is just more money spent to arrive at
+    # the same place. Spend it only when the first run actually narrowed
+    # something down.
+    if len(observed) < instance.n_probes:
+        seen += _explore_spread(instance, oracle, 1, skip=len(seen))
+        for mutant, row in seen[1:]:
+            real = {p for p, v in enumerate(row) if v}
+            if real:
+                observed |= real
+            else:
+                dead.add(mutant)
 
     # Cover what the runs measured plus what static analysis predicts for every
     # candidate not proven invisible. Restricting to probes a run has seen fire
