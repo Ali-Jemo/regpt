@@ -122,75 +122,64 @@ def _greedy_cover(instance, rows, survivors: set) -> list[int]:
 
 
 def structure(instance, oracle) -> list[int]:
-    """SUBJECT METHOD: verified predictive cover.
+    """SUBJECT METHOD: budget-filling predictive cover.
 
-    Three measurements drive this design.
+    What the measurements actually say:
 
-    1. Covering only the revisions you ran is hopeless: the best possible
-       cover of the best two observed rows detects a fraction of what matters.
-       A sample of revisions is not a sample of behaviour.
+    * A single well-chosen run is enough on some programs and not others. The
+      best possible one run reaches detection 1.000 at ratio 0.064 on difflib
+      and 0.255 on textwrap, but only 0.500 on fractions and cannot reach 1.000
+      on shlex at all. So "run once and keep what fired" is not a method, it is
+      a bet on the program.
 
-    2. Static call-graph reachability predicts the rest. A mutation inside
-       function F is observed by the probes whose transitive call closure
-       contains F, and the union of predictions over all candidates detects
-       every live mutation on three of the four programs.
+    * No free static signal picks the right run. Call-graph centrality was
+      measured and disproven: difflib's universal probe has centrality 0.24
+      while the most central probe (0.79) detects only a quarter as much.
 
-    3. That union is nearly everything, because candidates that *no probe can
-       see* still get predicted onto broad probe sets. Those dead regions are
-       what makes the union expensive, and they are exactly what a run can
-       rule out.
+    * What does generalise is that a change inside function F is observed by
+      the probes whose call closure contains F, and the union of those
+      predictions covers every live mutation on three of four programs.
 
-    So exploration is spent on one job: proving a candidate invisible. A run
-       that observes no change anywhere certifies that region dead, and its
-       prediction can be dropped from the union. The answer is then a min-cost
-       cover of the surviving predictions -- generalising to every revision
-       never run, because nothing but the certified-dead was removed.
+    So: spend the whole budget on runs spread across the source, and let the
+    prediction carry the unrun part. Runs contribute measured facts; the
+    prediction contributes coverage for everything else. If the runs reveal
+    nothing, the budget bought no information and the honest answer is to keep
+    everything -- having learned that before spending, not after.
     """
     predicted = {m: set(instance.predicts(m)) for m in range(instance.n_mutants)}
 
-    # Before spending anything: is exploration worth its price? The budget is
-    # only recovered if a run can shrink the answer. It can only shrink the
-    # answer if the predictions actually distinguish candidates: when every
-    # candidate predicts the same probe set, no run can rule any of them out,
-    # and the exploration would be spent to arrive at keep-everything anyway.
-    #
-    # That degeneracy is observable for free, from the source, before the first
-    # run. On this benchmark it separates cleanly: the two programs where
-    # exploring pays have 6 and 2 distinct predictions; the two where it cannot
-    # help have exactly 1.
+    # Before spending: can a run possibly change the answer? Only if the
+    # predictions distinguish candidates. When every candidate predicts the same
+    # probe set, no run can rule any of them out, so the budget would be spent
+    # only to arrive at keep-everything. That degeneracy is visible for free
+    # from the source, and it separates cleanly here: the programs where
+    # exploring pays have 6 and 2 distinct predictions, the ones where it
+    # cannot help have 1 each.
     if len({frozenset(p) for p in predicted.values()}) < 2:
         return list(range(instance.n_probes))
 
     seen = _explore_spread(instance, oracle, oracle.remaining())
-    if not seen:
-        return list(range(instance.n_probes))
-
-    # A run that saw no change certifies its candidate invisible. Its predicted
-    # probes are then not needed on its account.
-    dead: set = set()
     observed: set = set()
+    dead: set = set()
     for mutant, row in seen:
         real = {p for p, v in enumerate(row) if v}
         if real:
             observed |= real
         else:
-            # Invisible in a real run, so its prediction is not evidence.
             dead.add(mutant)
 
-    # Survivors: every candidate we did not prove invisible, covered by what
-    # static analysis predicts, plus the measured rows we did observe.
-    targets = [pred for m, pred in predicted.items() if m not in dead]
-    targets += [{p for p, v in enumerate(row) if v} for _, row in seen]
-
-    # Predictions concentrate on cheap probes that no run has ever shown to
-    # observe anything. Covering those is paying for evidence nobody has.
-    # If no run revealed a single change, the budget bought no information at
-    # all and the only defensible answer is to keep everything.
     if not observed:
+        # The budget bought nothing. Do not pretend otherwise.
         return list(range(instance.n_probes))
 
-    trusted = _greedy_cover_sets(instance, targets, allowed=observed)
-    chosen = trusted | observed
+    # Cover what the runs measured plus what static analysis predicts for every
+    # candidate not proven invisible. Restricting to probes a run has seen fire
+    # keeps the cover from buying evidence nobody has.
+    targets = [{p for p, v in enumerate(row) if v} for _, row in seen]
+    targets += [pred for m, pred in predicted.items() if m not in dead]
+
+    chosen = _greedy_cover_sets(instance, targets, allowed=observed)
+    chosen |= observed
     return sorted(chosen)
 
 
