@@ -127,6 +127,31 @@ def probe_reach(probe_src: str, functions: dict[str, ast.AST]) -> set[str]:
                     elif isinstance(target, ast.Attribute):
                         called.add(target.attr)
 
+    # A probe may reach the program through a helper defined alongside it, so
+    # following only the probe's own calls would silently report "reaches
+    # nothing" for every helper-based probe. Chasing the local helper's own
+    # calls is what makes those probes visible to the predictor at all.
+    local = {
+        n.name: n for n in ast.parse(probe_src).body
+        if isinstance(n, ast.FunctionDef) and n.name != "__regpt_probe__"
+    }
+    pending = list(called)
+    while pending:
+        name = pending.pop()
+        helper = local.get(name)
+        if helper is None:
+            continue
+        for node in ast.walk(helper):
+            if not isinstance(node, ast.Call):
+                continue
+            target = node.func
+            hit = target.id if isinstance(target, ast.Name) else (
+                target.attr if isinstance(target, ast.Attribute) else None
+            )
+            if hit and hit not in called:
+                called.add(hit)
+                pending.append(hit)
+
     reach = build_caller_map(functions)
     seeds: set[str] = set()
     for name in called:
