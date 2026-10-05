@@ -265,14 +265,14 @@
    "chosen": [
     7
    ],
-   "cost": 43,
-   "explore": 38,
+   "cost": 24,
+   "explore": 19,
    "keep": 5,
-   "queries": 2,
+   "queries": 1,
    "budget": 39,
    "detect": 1.0,
    "full_cost": 78,
-   "ratio": 0.5512820512820513,
+   "ratio": 0.3076923076923077,
    "error": null
   },
   {

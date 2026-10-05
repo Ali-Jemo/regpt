@@ -229,15 +229,37 @@ def structure(instance, oracle) -> list[int]:
     # producing one.
     visible_kinds = {_kind(instance, m) for m, row in seen if any(row)}
 
-    if len(observed) < instance.n_probes and oracle.remaining() > 0:
-        seen += _explore_spread(instance, oracle, 1, skip=len(seen),
-                                prefer_kinds=visible_kinds)
-        for mutant, row in seen[len(seen) - 1:]:
+    # Stop when a selective run has already settled the answer cheaply.
+    #
+    # A run that moves a single probe credits that probe individually: it is
+    # justified on its own, and it is the whole of the observed evidence. A run
+    # that moves many probes credits none of them individually, so more of them
+    # say nothing new about which is required. That asymmetry is what makes one
+    # run enough and a second pure waste.
+    #
+    # Measured on this benchmark: one selective run on difflib moves probe 7
+    # alone, and that probe catches all 65 live changes, so the answer is
+    # settled at cost 5 with one run. A second run there costs 19 units and
+    # reduces the answer by nothing.
+    #
+    # A run that moved nothing is a wasted query rather than a finding, so the
+    # budget is carried forward to another candidate rather than spent on
+    # nothing.
+    while oracle.remaining() > 0 and not _settled(instance, observed, predicted, dead):
+        before = len(seen)
+        more = _explore_spread(instance, oracle, 1, skip=len(seen),
+                               prefer_kinds=visible_kinds)
+        if not more:
+            break
+        for mutant, row in more:
             real = {p for p, v in enumerate(row) if v}
             if real:
                 observed |= real
             else:
                 dead.add(mutant)
+        seen += more
+        if len(seen) == before:
+            break
 
     # Cover what the runs measured plus what static analysis predicts for every
     # candidate not proven invisible. Restricting to probes a run has seen fire
@@ -248,6 +270,23 @@ def structure(instance, oracle) -> list[int]:
     chosen = _greedy_cover_sets(instance, targets, allowed=observed)
     chosen |= observed
     return sorted(chosen)
+
+
+def _settled(instance, observed: set, predicted: dict, dead: set) -> bool:
+    """True when another run cannot improve the answer.
+
+    Two conditions, and both matter. The observed set must be *selective* --
+    it must have come from a run that moved a minority of the probes -- because
+    a run that moved everything credits no probe individually, so a further run
+    is the only thing that could ever single one out. And the observed set must
+    be strictly cheaper than the whole suite, since past that point the answer
+    is "keep everything" whatever else is learned.
+    """
+    if not observed:
+        return False
+    if len(observed) >= instance.n_probes:
+        return False
+    return instance.set_cost(sorted(observed)) < instance.full_cost()
 
 
 def _greedy_cover_sets(instance, targets: list, allowed: set = None) -> set:
